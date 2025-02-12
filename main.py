@@ -28,30 +28,38 @@ async def set_resale_topic(message: types.Message):
     """Set topic for monitoring resale messages"""
     global resale_topic_id
 
-    # Check admin rights
-    chat_member = await bot.get_chat_member(message.chat.id, message.from_user.id)
-    if chat_member.status not in ['creator', 'administrator']:
-        await message.reply("❌ @" + message.from_user.username + ", ця команда доступна тільки адміністраторам.")
-        return
-
     try:
         # Get topic ID from command message
         if not message.message_thread_id:
-            await message.reply("Будь ласка, використовуйте цю команду в темі, яку хочете модерувати.")
+            notification = await message.reply("Будь ласка, використовуйте цю команду в темі, яку хочете модерувати.")
+            await asyncio.sleep(NOTIFICATION_DELETE_DELAY)
+            await message.delete()
+            await notification.delete()
+            return
+
+        # Check admin rights
+        chat_member = await bot.get_chat_member(message.chat.id, message.from_user.id)
+        if chat_member.status not in ['creator', 'administrator']:
+            notification = await message.reply("❌ @" + message.from_user.username + ", ця команда доступна тільки адміністраторам.")
+            await asyncio.sleep(NOTIFICATION_DELETE_DELAY)
+            await message.delete()
+            await notification.delete()
             return
 
         resale_topic_id = message.message_thread_id
-        response = await message.reply("✅ Бот тепер контролює цю гілку на відповідність правилам.")
+        notification = await message.reply("✅ Бот тепер контролює цю гілку на відповідність правилам.")
 
-        # Delete command message and response after a delay
-        await asyncio.sleep(5)
+        # Always delete command message and response after delay
+        await asyncio.sleep(NOTIFICATION_DELETE_DELAY)
         await message.delete()
-        await response.delete()
+        await notification.delete()
 
         logger.info(f"Resale topic set to {resale_topic_id}")
     except Exception as e:
         logger.error(f"Error setting resale topic: {e}")
-        await message.reply("Виникла помилка при встановленні теми для модерації.")
+        error_notification = await message.reply("Виникла помилка при встановленні теми для модерації.")
+        await asyncio.sleep(NOTIFICATION_DELETE_DELAY)
+        await error_notification.delete()
 
 @dp.message(lambda message: message.new_chat_members is not None)
 async def handle_new_member(message: types.Message):
@@ -102,13 +110,16 @@ async def handle_resale_message(message: types.Message):
             if user_id in user_last_message_time:
                 last_time = user_last_message_time[user_id]
                 if current_time - last_time < timedelta(minutes=MESSAGE_COOLDOWN_MINUTES):
-                    await message.delete()
                     username = f"@{message.from_user.username}" if message.from_user.username else "користувач"
+                    delete_reason = f"{username}, ви можете надсилати повідомлення у цю гілку лише раз на {MESSAGE_COOLDOWN_MINUTES} хвилин!"
+
+                    await message.delete()
                     logger.info(f"Cooldown triggered: user_id={user_id}, message_count={user_message_count[user_id]}")
+
                     try:
                         notification = await bot.send_message(
                             chat_id=message.chat.id,
-                            text=f"{username}, ви можете надсилати повідомлення у цю гілку лише раз на {MESSAGE_COOLDOWN_MINUTES} хвилин!",
+                            text=delete_reason,
                             message_thread_id=resale_topic_id
                         )
                         await asyncio.sleep(NOTIFICATION_DELETE_DELAY)
@@ -123,13 +134,16 @@ async def handle_resale_message(message: types.Message):
 
         # Check for required hashtags
         if not any(tag.lower() in message.text.lower() for tag in REQUIRED_HASHTAGS):
-            await message.delete()
             username = f"@{message.from_user.username}" if message.from_user.username else "користувач"
+            delete_reason = f"{username}, ваше повідомлення було видалено, оскільки воно не містить необхідних хештегів {', '.join(REQUIRED_HASHTAGS)}."
+
+            await message.delete()
             logger.info(f"Message deleted - missing hashtags: user_id={user_id}, message_id={message.message_id}")
+
             try:
                 notification = await bot.send_message(
                     chat_id=message.chat.id,
-                    text=f"{username}, ваше повідомлення було видалено, оскільки воно не містить хештегів {', '.join(REQUIRED_HASHTAGS)}.",
+                    text=delete_reason,
                     message_thread_id=resale_topic_id
                 )
                 await asyncio.sleep(NOTIFICATION_DELETE_DELAY)
