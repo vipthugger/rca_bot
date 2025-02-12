@@ -5,7 +5,7 @@ import logging
 BOT_TOKEN = os.getenv('BOT_TOKEN', 'your-bot-token-here')
 
 # Message templates
-WELCOME_MESSAGE = """👋 Вітаємо! Ознайомтеся з правилами, щоб уникнути непорозумінь. Приємного спілкування!"""
+WELCOME_MESSAGE = """👋 Вітаємо, {username}! Ознайомтеся з правилами, щоб уникнути непорозумінь. Приємного спілкування!"""
 
 RULES_TEXT = """
 📜 Правила групи:
@@ -20,7 +20,7 @@ REQUIRED_HASHTAGS = ['#продам', '#куплю']
 MESSAGE_COOLDOWN_MINUTES = 60
 MAX_MESSAGES_BEFORE_COOLDOWN = 3
 NOTIFICATION_DELETE_DELAY = 10  # seconds
-WELCOME_MESSAGE_DELETE_DELAY = 18  # seconds
+WELCOME_MESSAGE_DELETE_DELAY = 15  # seconds
 
 # Logging configuration
 LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'

@@ -33,7 +33,6 @@ async def set_resale_topic(message: types.Message):
         if not message.message_thread_id:
             notification = await message.reply("Будь ласка, використовуйте цю команду в темі, яку хочете модерувати.")
             await asyncio.sleep(NOTIFICATION_DELETE_DELAY)
-            await message.delete()
             await notification.delete()
             return
 
@@ -42,16 +41,14 @@ async def set_resale_topic(message: types.Message):
         if chat_member.status not in ['creator', 'administrator']:
             notification = await message.reply("❌ @" + message.from_user.username + ", ця команда доступна тільки адміністраторам.")
             await asyncio.sleep(NOTIFICATION_DELETE_DELAY)
-            await message.delete()
             await notification.delete()
             return
 
         resale_topic_id = message.message_thread_id
         notification = await message.reply("✅ Бот тепер контролює цю гілку на відповідність правилам.")
 
-        # Always delete command message and response after delay
+        # Delete only notification after delay
         await asyncio.sleep(NOTIFICATION_DELETE_DELAY)
-        await message.delete()
         await notification.delete()
 
         logger.info(f"Resale topic set to {resale_topic_id}")
@@ -69,9 +66,10 @@ async def handle_new_member(message: types.Message):
             if new_member.is_bot:
                 continue
 
+            # If username exists, use username, otherwise use "новий учасник"
             username = f"@{new_member.username}" if new_member.username else "новий учасник"
             welcome_msg = await message.reply(
-                f"{WELCOME_MESSAGE}\n{RULES_TEXT}"
+                WELCOME_MESSAGE.format(username=username)
             )
 
             # Delete the system message about user joining
@@ -116,17 +114,13 @@ async def handle_resale_message(message: types.Message):
                     await message.delete()
                     logger.info(f"Cooldown triggered: user_id={user_id}, message_count={user_message_count[user_id]}")
 
-                    try:
-                        notification = await bot.send_message(
-                            chat_id=message.chat.id,
-                            text=delete_reason,
-                            message_thread_id=resale_topic_id
-                        )
-                        await asyncio.sleep(NOTIFICATION_DELETE_DELAY)
-                        await notification.delete()
-                        logger.info(f"Cooldown notification sent and deleted: user_id={user_id}")
-                    except Exception as e:
-                        logger.error(f"Error sending cooldown notification: {str(e)}, user_id={user_id}, chat_id={message.chat.id}")
+                    notification = await bot.send_message(
+                        chat_id=message.chat.id,
+                        text=delete_reason,
+                        message_thread_id=resale_topic_id
+                    )
+                    await asyncio.sleep(NOTIFICATION_DELETE_DELAY)
+                    await notification.delete()
                     return
 
         # Update last message time
@@ -140,17 +134,13 @@ async def handle_resale_message(message: types.Message):
             await message.delete()
             logger.info(f"Message deleted - missing hashtags: user_id={user_id}, message_id={message.message_id}")
 
-            try:
-                notification = await bot.send_message(
-                    chat_id=message.chat.id,
-                    text=delete_reason,
-                    message_thread_id=resale_topic_id
-                )
-                await asyncio.sleep(NOTIFICATION_DELETE_DELAY)
-                await notification.delete()
-                logger.info(f"Hashtag notification sent and deleted: user_id={user_id}")
-            except Exception as e:
-                logger.error(f"Error sending hashtag notification: {str(e)}, user_id={user_id}, chat_id={message.chat.id}")
+            notification = await bot.send_message(
+                chat_id=message.chat.id,
+                text=delete_reason,
+                message_thread_id=resale_topic_id
+            )
+            await asyncio.sleep(NOTIFICATION_DELETE_DELAY)
+            await notification.delete()
 
             # Decrease message count for deleted messages
             user_message_count[user_id] -= 1
