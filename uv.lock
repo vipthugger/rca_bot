@@ -401,7 +401,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aiogram", specifier = ">=3.17.0" },
+    { name = "aiogram", specifier = ">=3.0.0" },
     { name = "telegram", specifier = ">=0.0.1" },
 ]
 
