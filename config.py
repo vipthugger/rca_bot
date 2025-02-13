@@ -12,11 +12,13 @@ RULES_TEXT = """
 1. Поважайте інших учасників
 2. Дотримуйтесь тематики групи
 3. В темі #resale використовуйте хештеги #продам або #куплю
-4. Заборонено спам та рекламу
+4. Мінімальна ціна для продажу - 3000 грн
+5. Заборонено спам та рекламу
 """
 
 # Topic monitoring
 REQUIRED_HASHTAGS = ['#продам', '#куплю']
+MIN_PRICE = 3000  # Minimum price in UAH
 MESSAGE_COOLDOWN_MINUTES = 60
 MAX_MESSAGES_BEFORE_COOLDOWN = 3
 NOTIFICATION_DELETE_DELAY = 10  # seconds

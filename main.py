@@ -1,10 +1,12 @@
 import asyncio
+import re
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command, CommandStart
 from config import (
     BOT_TOKEN, RULES_TEXT, WELCOME_MESSAGE, REQUIRED_HASHTAGS,
     MESSAGE_COOLDOWN_MINUTES, MAX_MESSAGES_BEFORE_COOLDOWN,
-    NOTIFICATION_DELETE_DELAY, WELCOME_MESSAGE_DELETE_DELAY
+    NOTIFICATION_DELETE_DELAY, WELCOME_MESSAGE_DELETE_DELAY,
+    MIN_PRICE
 )
 from logger import logger
 from datetime import datetime, timedelta
@@ -18,6 +20,29 @@ resale_topic_id = None
 user_last_message_time = {}  # Time of user's last message
 user_message_count = {}      # Count of user's messages
 
+def extract_price(text: str) -> int:
+    """
+    Extract price from message text, handling different formats:
+    - Plain numbers: 3000, 3 000
+    - With currency: 3000грн, 3000 грн
+    - Short format: 3k, 3К, 3к
+    Returns 0 if no valid price found
+    """
+    # Remove spaces from text for easier processing
+    text = text.lower().replace(' ', '')
+
+    # Try to find price in format "3k" or "3к" (both cyrillic and latin)
+    k_match = re.search(r'(\d+)[kкК]', text)
+    if k_match:
+        return int(k_match.group(1)) * 1000
+
+    # Try to find regular price, handling optional currency
+    price_match = re.search(r'(\d+)(?:грн|uah)?', text)
+    if price_match:
+        return int(price_match.group(1))
+
+    return 0
+
 @dp.message(CommandStart())
 async def start_command(message: types.Message):
     """Handle /start command"""
@@ -29,34 +54,62 @@ async def set_resale_topic(message: types.Message):
     global resale_topic_id
 
     try:
+        logger.info(f"Processing /resale_topic command from user {message.from_user.id}")
+
         # Get topic ID from command message
         if not message.message_thread_id:
+            logger.info("Command used outside of topic")
             notification = await message.reply("Будь ласка, використовуйте цю команду в темі, яку хочете модерувати.")
+            await message.delete()
             await asyncio.sleep(NOTIFICATION_DELETE_DELAY)
             await notification.delete()
             return
 
         # Check admin rights
         chat_member = await bot.get_chat_member(message.chat.id, message.from_user.id)
+        logger.info(f"User status: {chat_member.status}")
+
+        # Delete command message first
+        await message.delete()
+
         if chat_member.status not in ['creator', 'administrator']:
-            notification = await message.reply("❌ @" + message.from_user.username + ", ця команда доступна тільки адміністраторам.")
+            logger.info("Non-admin user attempted to use /resale_topic command")
+            notification = await bot.send_message(
+                chat_id=message.chat.id,
+                text="❌ Ця команда доступна тільки адміністраторам.",
+                message_thread_id=message.message_thread_id
+            )
             await asyncio.sleep(NOTIFICATION_DELETE_DELAY)
             await notification.delete()
             return
 
         resale_topic_id = message.message_thread_id
-        notification = await message.reply("✅ Бот тепер контролює цю гілку на відповідність правилам.")
+        logger.info(f"Admin user set resale_topic_id to {resale_topic_id}")
 
-        # Delete only notification after delay
+        # Send success notification for admins
+        notification = await bot.send_message(
+            chat_id=message.chat.id,
+            text="✅ Бот тепер контролює цю гілку на відповідність правилам.",
+            message_thread_id=message.message_thread_id
+        )
+
+        # Delete success notification after delay
         await asyncio.sleep(NOTIFICATION_DELETE_DELAY)
         await notification.delete()
 
         logger.info(f"Resale topic set to {resale_topic_id}")
     except Exception as e:
         logger.error(f"Error setting resale topic: {e}")
-        error_notification = await message.reply("Виникла помилка при встановленні теми для модерації.")
-        await asyncio.sleep(NOTIFICATION_DELETE_DELAY)
-        await error_notification.delete()
+        try:
+            notification = await bot.send_message(
+                chat_id=message.chat.id,
+                text="Виникла помилка при встановленні теми для модерації.",
+                message_thread_id=message.message_thread_id
+            )
+            await asyncio.sleep(NOTIFICATION_DELETE_DELAY)
+            await notification.delete()
+        except Exception as inner_e:
+            logger.error(f"Error sending error notification: {inner_e}")
 
 @dp.message(lambda message: message.new_chat_members is not None)
 async def handle_new_member(message: types.Message):
@@ -144,6 +197,29 @@ async def handle_resale_message(message: types.Message):
 
             # Decrease message count for deleted messages
             user_message_count[user_id] -= 1
+            return
+
+        # Check minimum price for sale posts
+        if '#продам' in message.text.lower():
+            price = extract_price(message.text)
+            if price < MIN_PRICE:
+                username = f"@{message.from_user.username}" if message.from_user.username else "користувач"
+                delete_reason = f"{username}, ваше повідомлення було видалено. Мінімальна ціна для продажу - {MIN_PRICE} грн."
+
+                await message.delete()
+                logger.info(f"Message deleted - price too low: user_id={user_id}, price={price}")
+
+                notification = await bot.send_message(
+                    chat_id=message.chat.id,
+                    text=delete_reason,
+                    message_thread_id=resale_topic_id
+                )
+                await asyncio.sleep(NOTIFICATION_DELETE_DELAY)
+                await notification.delete()
+
+                # Decrease message count for deleted messages
+                user_message_count[user_id] -= 1
+                return
 
     except Exception as e:
         logger.error(f"Error handling resale message: {str(e)}, user_id={message.from_user.id if message.from_user else 'unknown'}")
