@@ -6,6 +6,12 @@
       "use": "@vercel/python"
     }
   ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "bot.py"
+    }
+  ],
   "env": {
     "TELEGRAM_TOKEN": "@telegram_token"
   }
