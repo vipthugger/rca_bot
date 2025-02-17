@@ -1,14 +1,22 @@
 import os
 import re
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command, CommandStart
 from flask import Flask, request
 import logging
 import asyncio
+import json
+
+# Load environment variables
+load_dotenv()
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # Initialize Flask app
@@ -25,7 +33,11 @@ WELCOME_MESSAGE_DELETE_DELAY = 15  # seconds
 WELCOME_MESSAGE = """👋 Вітаємо, {username}! Ознайомтеся з правилами, щоб уникнути непорозумінь. Приємного спілкування!"""
 
 # Initialize bot and dispatcher
-bot = Bot(token=os.getenv('TELEGRAM_TOKEN'))
+TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
+if not TELEGRAM_TOKEN:
+    raise ValueError("No TELEGRAM_TOKEN found in environment variables")
+
+bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher()
 
 # Store monitored topic ID and user message tracking
@@ -177,29 +189,54 @@ async def handle_resale_message(message: types.Message):
     except Exception as e:
         logger.error(f"Error handling resale message: {str(e)}")
 
-# Flask route for webhook
-@app.route('/' + os.getenv('TELEGRAM_TOKEN', ''), methods=['POST'])
+# Flask routes
+@app.route('/' + TELEGRAM_TOKEN, methods=['POST'])
 async def webhook():
     """Process incoming updates via webhook"""
     try:
-        update = types.Update(**(await request.get_json()))
+        if not request.is_json:
+            logger.error("Received non-JSON request")
+            return 'Error: Invalid Content-Type', 400
+
+        update_data = await request.get_json()
+        logger.info(f"Received update: {json.dumps(update_data, indent=2)}")
+
+        update = types.Update(**update_data)
         await dp.feed_update(bot, update)
         return 'OK', 200
     except Exception as e:
-        logger.error(f"Error processing webhook update: {e}")
+        logger.error(f"Error processing webhook update: {e}", exc_info=True)
         return 'Error', 500
 
 @app.route('/')
 def index():
-    return 'Bot is running'
+    """Health check endpoint"""
+    return 'Bot is running', 200
 
-# Set webhook on startup
+# Startup function
 async def on_startup():
-    webhook_url = f"https://{os.getenv('VERCEL_URL')}/{os.getenv('TELEGRAM_TOKEN')}"
-    await bot.set_webhook(webhook_url)
-    logger.info(f"Webhook set to {webhook_url}")
+    """Configure webhook on startup"""
+    try:
+        VERCEL_URL = os.getenv('VERCEL_URL')
+        if not VERCEL_URL:
+            logger.error("No VERCEL_URL found in environment variables")
+            return
+
+        webhook_url = f"https://{VERCEL_URL}/{TELEGRAM_TOKEN}"
+        logger.info(f"Setting webhook to: {webhook_url}")
+
+        await bot.delete_webhook()  # Clean up any existing webhook
+        await bot.set_webhook(webhook_url)
+        logger.info("Webhook set successfully")
+    except Exception as e:
+        logger.error(f"Error setting webhook: {e}", exc_info=True)
+        raise
 
 if __name__ == '__main__':
-    import asyncio
-    asyncio.run(on_startup())
-    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 3000)))
+    try:
+        asyncio.run(on_startup())
+        port = int(os.getenv('PORT', 3000))
+        app.run(host='0.0.0.0', port=port)
+    except Exception as e:
+        logger.error(f"Error starting the bot: {e}", exc_info=True)
+        raise
